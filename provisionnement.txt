@@ -1,0 +1,178 @@
+def chain_ladder(triangle):
+    """"
+    Cette fonction caclule le provision pour sinistre
+    à payer selon la méthode Chain Ladder
+    
+    triangle = c'est le triangle de règlement cumulé
+    """"
+    
+    
+    triangle = pd.DataFrame(triangle)
+    
+    # on caclule les facteurs de développement que l'on stocke dans une liste
+    
+    facteur_dev = []
+    dim = len(triangle)
+    k = 1 # on initialise le premier facteur
+
+    for j in range(0, dim-1):
+        numerateur   = sum(triangle.iloc[0:(dim-1-j),k+1])
+        denominateur = sum(triangle.iloc[0:(dim-1-j),k])
+        fac          = round(numerateur/denominateur,2)
+        facteur_dev.append(fac)
+        k += 1
+    
+    # on remplit ensuite la partie inférieure du triangle
+
+    # pour faire ça, on commence à partir du bas du triangle
+
+    compteur = 0
+
+    for RowIndex in range(dim-1 ,0, -1):
+        k = compteur + 1
+    
+        for ColIndex in range(2, dim+1):
+            if (ColIndex + compteur) > dim:
+                break
+            else:
+                triangle.iloc[RowIndex, ColIndex + compteur] = triangle.iloc[RowIndex, ColIndex - 1 + compteur] * facteur_dev[k-1]     
+                k += 1 
+         
+        compteur +=1
+        k = 0
+        
+      
+    # on calcule enfin la provision pour sinistres à payer
+
+    provision = 0
+
+    j=len(df) #initialisation de l'indice de la colonne, la derniere colonne
+
+    for i in range(1, dim + 1):
+        provision = provision + triangle.iloc[i, dim] - triangle.iloc[i,j-1]
+        j -= 1
+        if j < 2: # s'arrête a la premiere année de deroulé
+            break
+            
+    return provision
+
+
+
+def bootstrap(triangle, nb_simul):
+    """
+    Cette fonction prend en argument le triangle des règlements
+    cumulés et le nombre de reechantillonnage à effectuer.
+    
+    Elle s'appue sur la méthode Chain Ladder et renvoie à la fin
+    la PSAP estimée
+    """
+    import pandas as pd
+    import numpy as np
+    from math import sqrt
+    
+    triangle = pd.DataFrame(triangle)
+    
+    dim = len(triangle) # on determine la longueur de notre triangle de provision
+    
+    # A ce niveau on va déjà créer des copies du triangle principale
+    # Ces copies serviront dans les procédures à venir
+    
+    tr_regl_annuel           = triangle.copy() # ce triangle servira à déterminer le triangle de reglements non cumulés
+    tr_regl_annuel_estime    = triangle.copy() # ce triangle servira à déterminer le triangle de reglements estimés non cumulé
+    tr_residu_pearson        = triangle.copy() # ce triangle servira à déterminer le triangle des résidus de pearson
+    tr_regl_cumul_estime     = triangle.copy() # ce triangle servira à déterminer le triangle de reglements cumulé estimés
+    tr_regl_annuel_reech     = triangle.copy() # ce triangle servira à stocker les valeurs lors du rééchantillonnage
+    
+    # on caclule d'abord les facteurs de développement
+    
+    facteur_dev = []
+    k = 1 # on initialise le premier facteur
+
+    for j in range(0, dim-1):
+        numerateur   = sum(triangle.iloc[0:(dim-1-j),k+1])
+        denominateur = sum(triangle.iloc[0:(dim-1-j),k])
+        fac          = round(numerateur/denominateur,2)
+        facteur_dev.append(fac)
+        k += 1
+    
+    # On estime le triangle supérieur sur la base des facteurs développement
+
+    index = 0 # on initialise l'index de la liste contenant les facteurs de developpement
+
+    for i in range(0, dim + 1): # boucle sur les lignes
+        reduc = i  # on met un compteur qui reduira a chaque passage en ligne inferieure, la longueure des colonnes
+        index = i + 1 # on initialise l'index de la liste contenant les facteurs de developpement
+        for j in range(dim - reduc, 1,-1): # boucle sur les colonnes
+            tr_regl_annuel_estime.iloc[i,j-1] = tr_regl_annuel_estime.iloc[i,j]/facteur_dev[-index]
+            index += 1
+            
+    
+    # On calcul le triangle de reglement annuel sur le triangle estimé
+    
+    for i in range(0, dim+1): # boucle sur les lignes
+        reduc = i
+        for j in range(dim-reduc, 1, -1): #boucle sur les colonnes
+            tr_regl_annuel_estime.iloc[i,j] = tr_regl_annuel_estime.iloc[i,j] - tr_regl_annuel_estime.iloc[i,j-1]
+            
+    # on calcule le triangle de reglement annuel sur le triangle initiale
+    triangle_int = df.copy()
+    for i in range(0, dim+1): # boucle sur les lignes
+        reduc = i
+        for j in range(dim-reduc, 1, -1): #boucle sur les colonnes
+            tr_regl_annuel.iloc[i,j] = tr_regl_annuel.iloc[i,j] - tr_regl_annuel.iloc[i,j-1]
+            
+    # On calcule enfin le triangle avec les résidus de pearson
+    # la formule : rp = (U - Û)/sqrt(Û) avec U et Û respectivement le charge annuelle empirique et estimée
+    
+    
+
+    trian_resid = NewTri.copy()
+    for i in range(0, dim + 1): # boucle sur les lignes
+        reduc = i
+        for j in range(dim-reduc, 0, -1): #boucle sur les colonnes
+            tr_residu_pearson.iloc[i,j] = (tr_regl_annuel.iloc[i,j] - tr_regl_annuel_estime.iloc[i,j])/(sqrt(tr_regl_annuel_estime.iloc[i,j]))
+
+            
+    # Ensuite on effectue un reechantillonnage des residus de pearson au sein du triangle superieur
+
+    # Mais d'abord on va stocker ces residus dans une liste
+    list_residu = []
+
+    for i in range(0, dim+1): # boucle sur les lignes
+        reduc = i
+        for j in range(dim-reduc, 0, -1): #boucle sur les colonnes
+            list_residu.append(tr_residu_pearson.iloc[i,j])
+    
+    # On débute la procédure de réechantillonnage et calcul des provisions pour chaque étape
+    provision = []
+    
+    for simul in range(1, nb_simul+1):
+    
+        # On redistribue ensuite ces residu suivant un tirage aleatoire avec remise au sein de du triangle
+
+        for i in range(0, dim + 1): # boucle sur les lignes
+            reduc = i
+            for j in range(dim-reduc, 0, -1): #boucle sur les colonnes
+                tr_residu_pearson.iloc[i,j] = np.random.choice(list_residu) 
+            
+        # Maintenant avec les residus de pearson reechantillonés, on reconstruit le triangle superieur
+
+        # De la formule rp = (U - Û)/sqrt(Û), on obtient U = Û + rp*sqrt(Û)
+
+        for i in range(0, dim+1): # boucle sur les lignes
+            reduc = i
+            for j in range(dim-reduc, 0, -1): #boucle sur les colonnes
+                tr_regl_annuel_reech.iloc[i,j] = tr_regl_annuel_estime.iloc[i,j] + tr_residu_pearson.iloc[i,j]*sqrt(tr_regl_annuel_estime.iloc[i,j])
+    
+        # on determine à present le triangle des reglements cumulés
+
+        for i in range(0, dim + 1): # boucle sur les lignes
+            reduc = i
+            for j in range(2, dim + 1 - reduc): #boucle sur les colonnes
+                tr_regl_cumul_estime.iloc[i,j] = tr_regl_annuel_reech.iloc[i,j] + tr_regl_cumul_estime.iloc[i,j-1]
+        
+        provision.append(chain_ladder(tr_regl_cumul_estime))
+        
+    # On calcule enfin la provision bootstrap comme la moyenne des nb_simul provisions calculées
+    provision_bootstrap = np.array(provision)
+    return  provision_bootstrap.mean()
