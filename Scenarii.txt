@@ -4,27 +4,68 @@ from scipy.interpolate import interp1d
 
 df = pd.ExcelFile('C:/Users/Laure/Desktop/Cours/Fil Rouge/100Scenarii V3bis.xlsx').parse('BruitageDur')
 
+Liste_df=[]
 for numligne in range (0, len(df)):
+    
+    #Récupération des taux SWAP dans le fichier
     Tx_SWP_existants =[]
     for incr_SWP in range(3, 11):
-        Tx_SWP_existants.append(df.iloc[0,incr_SWP])
+        Tx_SWP_existants.append(df.iloc[numligne,incr_SWP])
     Mat_SWP_existants = [1,2,5,7,10,15,20,30]
-#Tx_SWP_existants
     Mat_SWP_Manquants = [3,4,6,8,9,11,12,13,14,16,17,18,19,21,22,23,24,25,26,27,28,29]
+   
+    #Interpolation des taux SWAP manquants
     Tx_SWP_Manquants = np.interp(Mat_SWP_Manquants, Mat_SWP_existants, Tx_SWP_existants)
     Tx = Tx_SWP_existants+Tx_SWP_Manquants.tolist()
     Mat =Mat_SWP_existants+Mat_SWP_Manquants
-    Tx_SWP= {'Maturite':pd.Series(Mat, index =Mat),
-         'Taux SWAP': pd.Series(Tx, index = Mat)}
-    Tx_SWP_ZC=pd.DataFrame(Tx_SWP)
-    Tx_SWP_ZC['Discount Factor']=1
-    Tx_SWP_ZC['Taux ZC']=0
-    #Calcul DF et Taux ZC pour Maturité = 1
-    Tx_SWP_ZC.iloc[0,2]=1/(1+Tx_SWP_ZC.iloc[0,1])
-    Tx_SWP_ZC.iloc[0,3]=1/Tx_SWP_ZC.iloc[0,2]-1
+
+    #Mise en mémoire de ces nouveaux taux ainsi que de la maturité et du scénario pour la visualisation à venir
+    Tx_SWP_ZC= {'Maturite':pd.Series(Mat, index =Mat),
+                'Taux SWAP': pd.Series(Tx, index = Mat),
+                'Discount Factor':pd.Series(1, index = Mat),
+                'Taux ZC': pd.Series(0, index = Mat),
+                'Scenario': pd.Series(df.iloc[numligne,0], index = Mat)
+              
+            }
+    #Tri selon les maturités pour pouvoir ensuite réaliser le bootstrap
+    Tx_SWP_ZC_Trie=pd.DataFrame(Tx_SWP_ZC).sort_values('Maturite',ascending=True)
+
+    #Calcul DF et Taux ZC pour Maturité = 1 attention, les taux sont des %
+    Tx_SWP_ZC_Trie.iloc[0,0]=1/(1+Tx_SWP_ZC_Trie.iloc[0,3]/100)
+    Tx_SWP_ZC_Trie.iloc[0,4]=100*(1/(Tx_SWP_ZC_Trie.iloc[0,0])-1)
+
+    #Bootstrap pour le calcul des DF et Taux ZC suivants
+        #DF[i]=[1-somme(1->i)(TxSWP[i]%*DF[j])]/[1+TxSWP[i]%]
+        #TxZC[i]%=(1/DF[i])**(1/Mat[i])-1
     for i in range (1,30):
-        for j in range (0,i):
-            Tx_SWP_ZC.iloc[i,2]=(Tx_SWP_ZC.iloc[i,2]-(Tx_SWP_ZC.iloc[i,1]*Tx_SWP_ZC.iloc[j,2]))
-        Tx_SWP_ZC.iloc[i,2]=Tx_SWP_ZC.iloc[i,2]/(1+Tx_SWP_ZC.iloc[i,1])
-        Tx_SWP_ZC.iloc[i,3]=Tx_SWP_ZC.iloc[i,2]**(-1/Tx_SWP_ZC.iloc[i,0])-1
-    Liste_df.append(Tx_SWP_ZC)
+        for j in range (0,i+1):
+            Tx_SWP_ZC_Trie.iloc[i,0]=Tx_SWP_ZC_Trie.iloc[i,0]-(Tx_SWP_ZC_Trie.iloc[i,3]*Tx_SWP_ZC_Trie.iloc[j,0]/100)
+        Tx_SWP_ZC_Trie.iloc[i,0]=Tx_SWP_ZC_Trie.iloc[i,0]/(1+Tx_SWP_ZC_Trie.iloc[i,3]/100)
+        Tx_SWP_ZC_Trie.iloc[i,4]=100*((1/Tx_SWP_ZC_Trie.iloc[i,0])**(1/Tx_SWP_ZC_Trie.iloc[i,1])-1)   
+    Liste_df.append(Tx_SWP_ZC_Trie)
+
+#Tracé de quelques courbes Taux Zero Coupon pour un même scenario
+import matplotlib.pyplot as plt
+scenario =2
+x = range(1,31)
+for i in range(0, 11): 
+    plt.plot(x,Liste_df[i+scenario].iloc[range(0,30),4],label ="Date : "+ str(df.iloc[i+scenario,1])[0:10])
+plt.legend()
+plt.xlim(0,60)
+plt.title("Courbes Taux Zero Coupons du Scenario "+str(scenario)) 
+plt.show()
+
+#annee choisie pour le paramètre date (entre 2012 et 2062)
+annee = 2016
+#Range des scenarios utilisés pour le tracé des courbes (Scenarii de 0 à 99)
+PremierScenario = 0
+DernierScenario = 12
+
+#Tracé de quelques courbes Taux Zero Coupon pour une meme date
+x = range(1,31)
+for numScenario in range(PremierScenario, DernierScenario): 
+    plt.plot(x,Liste_df[51*numScenario+(annee-2012)].iloc[range(0,30),4],label ="Scenario : "+ str(df.iloc[51*numScenario+(annee-2012),0]))
+plt.legend()
+plt.xlim(0,50)
+plt.title("Courbes Taux Zero Coupons pour Date = "+ str(df.iloc[51+(annee-2012),1])[0:10]) 
+plt.show()
